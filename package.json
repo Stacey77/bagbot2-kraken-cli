@@ -1,0 +1,11 @@
+{
+  "name": "bagbot2-kraken-cli",
+  "version": "1.0.0",
+  "description": "Node.js and Python starter files for agentic/AI stack integration",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo 'Error: no test specified' && exit 1"
+  },
+  "author": "Stacey77",
+  "license": "ISC"
+}
