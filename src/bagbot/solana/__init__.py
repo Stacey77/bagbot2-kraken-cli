@@ -1,9 +1,5 @@
-"""Solana integration (stub).
+"""Solana integration."""
 
-Reserved namespace for future on-chain operations (wallet management,
-SPL token transfers, swaps). No Solana dependencies yet.
-"""
+from .adapter import LAMPORTS_PER_SOL, SolanaAdapter, SolanaError
 
-from .adapter import SolanaAdapter
-
-__all__ = ["SolanaAdapter"]
+__all__ = ["LAMPORTS_PER_SOL", "SolanaAdapter", "SolanaError"]

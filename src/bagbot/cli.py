@@ -96,6 +96,22 @@ def ticker(pair: str = typer.Argument(..., help="Market pair, e.g. XBTUSD")) -> 
 
 
 @app.command()
+def watch(
+    pair: str = typer.Argument(..., help="Market pair, e.g. XBT/USD"),
+) -> None:
+    """Stream live ticker updates via WebSocket (Ctrl+C to stop)."""
+    from bagbot.kraken.ws import stream_ticker_sync
+
+    def _print(t) -> None:
+        typer.echo(f"{t.pair}  last={t.last}  bid={t.bid}  ask={t.ask}  vol24h={t.volume_24h}")
+
+    try:
+        stream_ticker_sync([pair], _print)
+    except KeyboardInterrupt:
+        typer.echo("stopped")
+
+
+@app.command()
 def orderbook(
     pair: str = typer.Argument(..., help="Market pair, e.g. XBTUSD"),
     depth: int = typer.Option(10, "--depth", "-d", help="Order book depth."),
@@ -164,6 +180,62 @@ def sell(
 ) -> None:
     """Place a sell order (simulated unless --live)."""
     _place("sell", pair, volume, price)
+
+
+@app.command()
+def backtest(
+    pair: str = typer.Argument(..., help="Market pair, e.g. XBTUSD"),
+    strategy: str = typer.Option("sma", "--strategy", "-s", help="Strategy name (currently: sma)."),
+    fast: int = typer.Option(10, "--fast", help="Fast SMA period."),
+    slow: int = typer.Option(30, "--slow", help="Slow SMA period."),
+    interval: int = typer.Option(60, "--interval", "-i", help="Candle interval in minutes."),
+    cash: float = typer.Option(10_000.0, "--cash", help="Initial cash for the backtest."),
+) -> None:
+    """Backtest a strategy on historical OHLC candles (public data)."""
+    from bagbot.strategy import Candle, SmaCrossStrategy, run_backtest
+
+    if strategy != "sma":
+        typer.secho(f"Error: unknown strategy {strategy!r} (available: sma)", err=True, fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+    try:
+        raw = _STATE.engine().client.ohlc(pair, interval)
+    except KrakenError as exc:
+        typer.secho(f"Error: {exc}", err=True, fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+    rows = next((v for v in raw.values() if isinstance(v, list)), [])
+    candles = [Candle.from_kraken(r) for r in rows]
+    result = run_backtest(SmaCrossStrategy(fast, slow), candles, cash)
+    _echo(result)
+
+
+@app.command()
+def solbalance(
+    address: str = typer.Argument(..., help="Solana address (base58)."),
+    rpc_url: str = typer.Option("https://api.mainnet-beta.solana.com", "--rpc", help="Solana RPC URL."),
+) -> None:
+    """Show the SOL balance of a Solana address."""
+    from bagbot.solana import LAMPORTS_PER_SOL, SolanaAdapter, SolanaError
+
+    try:
+        lamports = SolanaAdapter(rpc_url=rpc_url).get_balance(address)
+    except SolanaError as exc:
+        typer.secho(f"Error: {exc}", err=True, fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+    _echo({"address": address, "lamports": lamports, "sol": lamports / LAMPORTS_PER_SOL})
+
+
+@app.command()
+def gui(
+    port: int = typer.Option(8080, "--port", help="Port for the local dashboard."),
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind address."),
+    pair: str = typer.Option("XBTUSD", "--pair", help="Market pair shown on the dashboard."),
+) -> None:
+    """Launch the local web dashboard (Ctrl+C to stop)."""
+    from bagbot.gui import DashboardData, serve
+
+    data = DashboardData(_STATE.engine(), default_pair=pair)
+    typer.secho(f"Dashboard at http://{host}:{port}  (Ctrl+C to stop)", fg=typer.colors.GREEN)
+    serve(data, host=host, port=port)
 
 
 @app.command()
