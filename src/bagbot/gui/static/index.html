@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BagBot Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0a101c; --panel: #101a2b; --border: #1e3352;
+    --text: #d7e3f4; --muted: #6b80a0; --accent: #3ec1f3; --cyan: #29d3da;
+    --green: #2fbf71; --red: #e5484d; --yellow: #f5a623;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--text); font-family: "Segoe UI", system-ui, sans-serif; padding: 18px; }
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+  header h1 { font-size: 20px; font-weight: 600; }
+  header h1 span { color: var(--accent); }
+  .badge { padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+  .badge.dry { background: rgba(245,166,35,.15); color: var(--yellow); border: 1px solid var(--yellow); }
+  .badge.live { background: rgba(229,72,77,.15); color: var(--red); border: 1px solid var(--red); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 10px; }
+  .big { font-size: 28px; font-weight: 700; color: var(--cyan); }
+  .muted { color: var(--muted); font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; }
+  canvas { width: 100%; height: 200px; }
+  .alert { padding: 6px 10px; border-radius: 6px; margin-bottom: 6px; font-size: 13px; }
+  .alert.info { background: rgba(62,193,243,.12); color: var(--accent); }
+  .alert.warning { background: rgba(245,166,35,.12); color: var(--yellow); }
+  .buy { color: var(--green); } .sell { color: var(--red); }
+  .pos { color: var(--green); } .neg { color: var(--red); }
+  form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  input, select, button {
+    background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 8px; font-size: 13px;
+  }
+  button { cursor: pointer; font-weight: 600; }
+  button.buy-btn { border-color: var(--green); color: var(--green); }
+  button.sell-btn { border-color: var(--red); color: var(--red); }
+  button:hover { filter: brightness(1.3); }
+  #order-result { font-size: 12px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>&#9889; Bag<span>Bot</span></h1>
+  <span id="mode" class="badge dry">&hellip;</span>
+  <span class="muted" id="uptime"></span>
+</header>
+<div class="grid">
+  <div class="card">
+    <h2>Market Data</h2>
+    <div class="big" id="last">?</div>
+    <div class="muted" id="pair"></div>
+    <table>
+      <tr><th>Bid</th><th>Ask</th><th>Vol 24h</th></tr>
+      <tr><td id="bid">?</td><td id="ask">?</td><td id="vol">?</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h2>Performance Analytics <span class="muted">(sma backtest)</span></h2>
+    <div id="perf" class="muted">loading?</div>
+  </div>
+  <div class="card">
+    <h2>Candlesticks (1h)</h2>
+    <canvas id="chart" width="640" height="200"></canvas>
+  </div>
+  <div class="card">
+    <h2>Place Order</h2>
+    <form id="order-form">
+      <select id="o-side"><option value="buy">buy</option><option value="sell">sell</option></select>
+      <input id="o-pair" placeholder="pair" value="XBTUSD" size="8">
+      <input id="o-vol" placeholder="volume" size="8" required>
+      <input id="o-price" placeholder="limit price (opt)" size="12">
+      <button type="submit" class="buy-btn" id="o-submit">Submit</button>
+    </form>
+    <div id="order-result" class="muted"></div>
+  </div>
+  <div class="card">
+    <h2>Portfolio</h2>
+    <div id="portfolio" class="muted">loading?</div>
+  </div>
+  <div class="card">
+    <h2>Open Orders</h2>
+    <div id="orders" class="muted">loading?</div>
+  </div>
+  <div class="card">
+    <h2>System Alerts</h2>
+    <div id="alerts"></div>
+  </div>
+</div>
+<script>
+async function j(path, opts) { const r = await fetch(path, opts); return r.json(); }
+
+function drawCandles(candles) {
+  const c = document.getElementById("chart"), ctx = c.getContext("2d");
+  ctx.clearRect(0, 0, c.width, c.height);
+  if (!candles.length) return;
+  const shown = candles.slice(-60);
+  const highs = shown.map(k => k.high), lows = shown.map(k => k.low);
+  const min = Math.min(...lows), max = Math.max(...highs), span = (max - min) || 1;
+  const w = (c.width - 10) / shown.length;
+  const y = v => c.height - 6 - (v - min) / span * (c.height - 12);
+  shown.forEach((k, i) => {
+    const x = 5 + i * w + w / 2;
+    const up = k.close >= k.open;
+    ctx.strokeStyle = ctx.fillStyle = up ? "#2fbf71" : "#e5484d";
+    ctx.beginPath(); ctx.moveTo(x, y(k.high)); ctx.lineTo(x, y(k.low)); ctx.stroke();
+    const top = y(Math.max(k.open, k.close)), h = Math.max(1, Math.abs(y(k.open) - y(k.close)));
+    ctx.fillRect(x - w * 0.3, top, w * 0.6, h);
+  });
+}
+
+async function refresh() {
+  try {
+    const s = await j("/api/status");
+    const m = document.getElementById("mode");
+    m.textContent = s.mode.toUpperCase(); m.className = "badge " + (s.dry_run ? "dry" : "live");
+    document.getElementById("uptime").textContent = "uptime " + s.uptime_seconds + "s";
+
+    const mk = await j("/api/market");
+    if (!mk.error) {
+      document.getElementById("last").textContent = mk.last.toLocaleString();
+      document.getElementById("pair").textContent = mk.pair;
+      document.getElementById("bid").textContent = mk.bid;
+      document.getElementById("ask").textContent = mk.ask;
+      document.getElementById("vol").textContent = mk.volume_24h;
+    }
+
+    const pf = await j("/api/portfolio");
+    const bal = Object.entries(pf.balances || {});
+    document.getElementById("portfolio").innerHTML =
+      (bal.length ? "<table>" + bal.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("") + "</table>" : "")
+      + (pf.note ? `<div class="muted">${pf.note}</div>` : "");
+
+    const od = await j("/api/orders");
+    const entries = Object.entries(od || {});
+    document.getElementById("orders").innerHTML = entries.length
+      ? "<table><tr><th>txid</th><th>side</th><th>vol</th><th>type</th></tr>" +
+        entries.map(([id, o]) => `<tr><td>${id}</td><td class="${o.type}">${o.type || ""}</td><td>${o.vol || ""}</td><td>${o.ordertype || ""}</td></tr>`).join("") + "</table>"
+      : '<span class="muted">no open orders</span>';
+
+    const al = await j("/api/alerts");
+    document.getElementById("alerts").innerHTML =
+      al.map(a => `<div class="alert ${a.level}">${a.text}</div>`).join("");
+  } catch (e) { /* server unreachable - keep last state */ }
+}
+
+async function refreshSlow() {
+  try {
+    const o = await j("/api/ohlc?interval=60");
+    if (o.candles) drawCandles(o.candles);
+    const p = await j("/api/performance");
+    if (!p.error) {
+      const cls = p.return_pct >= 0 ? "pos" : "neg";
+      document.getElementById("perf").innerHTML =
+        `<table><tr><th>Return</th><th>Max DD</th><th>Trades</th><th>Win rate</th></tr>` +
+        `<tr><td class="${cls}">${p.return_pct}%</td><td class="neg">${p.max_drawdown_pct}%</td>` +
+        `<td>${p.trades}</td><td>${p.win_rate === null ? "?" : (p.win_rate * 100).toFixed(0) + "%"}</td></tr></table>`;
+    }
+  } catch (e) { /* ignore */ }
+}
+
+document.getElementById("order-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const btn = document.getElementById("o-submit");
+  const side = document.getElementById("o-side").value;
+  btn.className = side === "buy" ? "buy-btn" : "sell-btn";
+  const body = {
+    side,
+    pair: document.getElementById("o-pair").value,
+    volume: parseFloat(document.getElementById("o-vol").value),
+    price: document.getElementById("o-price").value || null,
+  };
+  const res = await j("/api/order", {
+    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body),
+  });
+  const el = document.getElementById("order-result");
+  el.textContent = res.error ? ("Error: " + res.error) : `${res.txid}: ${res.description}`;
+  el.className = res.error ? "neg" : "pos";
+  refresh();
+});
+
+refresh(); refreshSlow();
+setInterval(refresh, 3000);
+setInterval(refreshSlow, 60000);
+</script>
+</body>
+</html>

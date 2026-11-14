@@ -1,0 +1,5 @@
+[
+  { "pair": "XBTUSD", "above": 150000 },
+  { "pair": "XBTUSD", "below": 40000 },
+  { "pair": "ETHUSD", "above": 8000 }
+]
