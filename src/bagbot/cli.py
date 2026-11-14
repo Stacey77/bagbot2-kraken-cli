@@ -191,10 +191,13 @@ def backtest(
     lookback: int = typer.Option(20, "--lookback", help="[meanrev/momentum] Lookback in candles."),
     num_std: float = typer.Option(2.0, "--num-std", help="[meanrev] Band width in std devs."),
     threshold: float = typer.Option(0.03, "--threshold", help="[momentum] Return threshold (e.g. 0.03 = 3%)."),
-    interval: int = typer.Option(60, "--interval", "-i", help="Candle interval in minutes."),
+    interval: int = typer.Option(60, "--interval", "-i", help="[kraken] Candle interval in minutes."),
+    source: str = typer.Option("kraken", "--source", help="Data source: kraken (crypto) or yahoo (stocks)."),
+    start: str = typer.Option("2024-01-01", "--start", help="[yahoo] Start date YYYY-MM-DD."),
+    end: str = typer.Option("2025-01-01", "--end", help="[yahoo] End date YYYY-MM-DD."),
     cash: float = typer.Option(10_000.0, "--cash", help="Initial cash for the backtest."),
 ) -> None:
-    """Backtest a strategy on historical OHLC candles (public data)."""
+    """Backtest a strategy on historical candles (Kraken crypto or Yahoo stocks)."""
     from bagbot.strategy import Candle, create_strategy, run_backtest
 
     params: dict = {"sma": {"fast": fast, "slow": slow},
@@ -205,15 +208,33 @@ def backtest(
     except ValueError as exc:
         typer.secho(f"Error: {exc}", err=True, fg=typer.colors.RED)
         raise typer.Exit(code=1)
-    try:
-        raw = _STATE.engine().client.ohlc(pair, interval)
-    except KrakenError as exc:
-        typer.secho(f"Error: {exc}", err=True, fg=typer.colors.RED)
+    if source == "yahoo":
+        from bagbot.stocks import YahooFeed
+        try:
+            candles = YahooFeed().ohlc(pair, start, end)
+        except Exception as exc:
+            typer.secho(f"Error fetching {pair}: {exc}", err=True, fg=typer.colors.RED)
+            raise typer.Exit(code=1)
+    elif source == "kraken":
+        try:
+            raw = _STATE.engine().client.ohlc(pair, interval)
+        except KrakenError as exc:
+            typer.secho(f"Error: {exc}", err=True, fg=typer.colors.RED)
+            raise typer.Exit(code=1)
+        rows = next((v for v in raw.values() if isinstance(v, list)), [])
+        candles = [Candle.from_kraken(r) for r in rows]
+    else:
+        typer.secho(f"Error: unknown source {source!r} (kraken|yahoo)", err=True, fg=typer.colors.RED)
         raise typer.Exit(code=1)
-    rows = next((v for v in raw.values() if isinstance(v, list)), [])
-    candles = [Candle.from_kraken(r) for r in rows]
+
+    if not candles:
+        typer.secho(f"Error: no candle data for {pair} from {source}", err=True, fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+
     result = run_backtest(strat, candles, cash)
     summary = {
+        "source": source,
+        "symbol": pair,
         "strategy": strategy,
         "candles": len(candles),
         "initial_cash": result.initial_cash,

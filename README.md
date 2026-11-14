@@ -13,6 +13,9 @@ default — no real orders are placed unless you explicitly enable live mode.
 - **Strategy framework + backtesting**: SMA crossover, mean-reversion, and
   momentum strategies with a long-only backtester reporting return, win rate,
   and max drawdown (`bagbot backtest --strategy sma|meanrev|momentum`)
+- **Equities data**: yfinance adapter for stock candles (AAPL/MSFT/NVDA…);
+  backtest any ticker with `--source yahoo --start YYYY-MM-DD --end YYYY-MM-DD`
+  (install with `pip install bagbot[stocks]`)
 - **Solana adapter**: JSON-RPC balance/blockhash queries (httpx), transfers
   signed via the optional `solders` extra (`pip install bagbot[solana]`)
 - **Local web dashboard**: `bagbot gui` serves a dark trading dashboard with
@@ -58,6 +61,8 @@ bagbot cancel DRYRUN-000001
 bagbot backtest XBTUSD --strategy sma --fast 10 --slow 30 --interval 60
 bagbot backtest XBTUSD --strategy meanrev --lookback 20 --num-std 2
 bagbot backtest XBTUSD --strategy momentum --lookback 10 --threshold 0.05
+bagbot backtest MSFT --source yahoo --start 2024-01-01 --end 2025-01-01   # stocks
+bagbot backtest NVDA --source yahoo --strategy momentum --threshold 0.08
 bagbot solbalance <SOLANA_ADDRESS>     # SOL balance via JSON-RPC
 bagbot gui --port 8080                 # local web dashboard
 ```
@@ -112,6 +117,8 @@ src/bagbot/
     backtest.py       # long-only backtester (PnL, win rate, max drawdown)
   solana/
     adapter.py        # Solana JSON-RPC adapter (transfers via solders extra)
+  stocks/
+    yahoo.py          # yfinance equities data adapter (daily OHLCV)
   gui/
     server.py         # stdlib HTTP server + JSON API for the dashboard
     static/index.html # dark trading dashboard UI

@@ -23,6 +23,9 @@ dev = [
 solana = [
     "solders>=0.21",
 ]
+stocks = [
+    "yfinance>=0.2",
+]
 
 [project.scripts]
 bagbot = "bagbot.cli:app"
