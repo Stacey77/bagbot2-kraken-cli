@@ -185,17 +185,25 @@ def sell(
 @app.command()
 def backtest(
     pair: str = typer.Argument(..., help="Market pair, e.g. XBTUSD"),
-    strategy: str = typer.Option("sma", "--strategy", "-s", help="Strategy name (currently: sma)."),
-    fast: int = typer.Option(10, "--fast", help="Fast SMA period."),
-    slow: int = typer.Option(30, "--slow", help="Slow SMA period."),
+    strategy: str = typer.Option("sma", "--strategy", "-s", help="Strategy: sma, meanrev, momentum."),
+    fast: int = typer.Option(10, "--fast", help="[sma] Fast SMA period."),
+    slow: int = typer.Option(30, "--slow", help="[sma] Slow SMA period."),
+    lookback: int = typer.Option(20, "--lookback", help="[meanrev/momentum] Lookback in candles."),
+    num_std: float = typer.Option(2.0, "--num-std", help="[meanrev] Band width in std devs."),
+    threshold: float = typer.Option(0.03, "--threshold", help="[momentum] Return threshold (e.g. 0.03 = 3%)."),
     interval: int = typer.Option(60, "--interval", "-i", help="Candle interval in minutes."),
     cash: float = typer.Option(10_000.0, "--cash", help="Initial cash for the backtest."),
 ) -> None:
     """Backtest a strategy on historical OHLC candles (public data)."""
-    from bagbot.strategy import Candle, SmaCrossStrategy, run_backtest
+    from bagbot.strategy import Candle, create_strategy, run_backtest
 
-    if strategy != "sma":
-        typer.secho(f"Error: unknown strategy {strategy!r} (available: sma)", err=True, fg=typer.colors.RED)
+    params: dict = {"sma": {"fast": fast, "slow": slow},
+                    "meanrev": {"lookback": lookback, "num_std": num_std},
+                    "momentum": {"lookback": lookback, "threshold": threshold}}
+    try:
+        strat = create_strategy(strategy, **params.get(strategy, {}))
+    except ValueError as exc:
+        typer.secho(f"Error: {exc}", err=True, fg=typer.colors.RED)
         raise typer.Exit(code=1)
     try:
         raw = _STATE.engine().client.ohlc(pair, interval)
@@ -204,8 +212,18 @@ def backtest(
         raise typer.Exit(code=1)
     rows = next((v for v in raw.values() if isinstance(v, list)), [])
     candles = [Candle.from_kraken(r) for r in rows]
-    result = run_backtest(SmaCrossStrategy(fast, slow), candles, cash)
-    _echo(result)
+    result = run_backtest(strat, candles, cash)
+    summary = {
+        "strategy": strategy,
+        "candles": len(candles),
+        "initial_cash": result.initial_cash,
+        "final_equity": round(result.final_equity, 2),
+        "return_pct": round(result.return_pct, 2),
+        "max_drawdown_pct": round(result.max_drawdown_pct, 2),
+        "trades": len(result.trades),
+        "win_rate": None if result.win_rate is None else round(result.win_rate, 3),
+    }
+    _echo(summary)
 
 
 @app.command()

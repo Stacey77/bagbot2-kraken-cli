@@ -27,11 +27,24 @@ class BacktestResult:
     trades: list[Trade] = field(default_factory=list)
     wins: int = 0
     losses: int = 0
+    equity_curve: list[float] = field(default_factory=list)
+    max_drawdown_pct: float = 0.0
 
     @property
     def win_rate(self) -> float | None:
         closed = self.wins + self.losses
         return (self.wins / closed) if closed else None
+
+
+def max_drawdown_pct(equity_curve: list[float]) -> float:
+    """Largest peak-to-trough percentage decline of an equity curve."""
+    peak = 0.0
+    worst = 0.0
+    for equity in equity_curve:
+        peak = max(peak, equity)
+        if peak > 0:
+            worst = min(worst, (equity - peak) / peak * 100.0)
+    return worst
 
 
 def run_backtest(
@@ -46,6 +59,7 @@ def run_backtest(
     entry_price = 0.0
     wins = losses = 0
     trades: list[Trade] = []
+    equity_curve: list[float] = []
 
     for i, candle in enumerate(candles):
         signal = strategy.on_candle(i, candle, candles[: i + 1])
@@ -62,6 +76,7 @@ def run_backtest(
                 losses += 1
             trades.append(Trade("sell", candle.time, candle.close, quantity))
             quantity = 0.0
+        equity_curve.append(cash + quantity * candle.close)
 
     final_equity = cash + quantity * (candles[-1].close if candles else 0.0)
     return BacktestResult(
@@ -71,4 +86,6 @@ def run_backtest(
         trades=trades,
         wins=wins,
         losses=losses,
+        equity_curve=equity_curve,
+        max_drawdown_pct=max_drawdown_pct(equity_curve),
     )

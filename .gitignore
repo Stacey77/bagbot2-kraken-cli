@@ -23,3 +23,6 @@ htmlcov/
 # Editor
 .vscode/
 .idea/
+
+# Local alert rules (may contain strategy preferences)
+.bagbot.alerts.json

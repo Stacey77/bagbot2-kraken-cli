@@ -10,12 +10,15 @@ default — no real orders are placed unless you explicitly enable live mode.
 - **Live WebSocket feeds**: `bagbot watch` streams ticker updates (Kraken WS v2)
 - Account: balances, open orders (signed private endpoints)
 - Trading: market/limit buy & sell, order cancellation
-- **Strategy framework + backtesting**: SMA crossover strategy and a long-only
-  backtester over historical OHLC candles (`bagbot backtest`)
+- **Strategy framework + backtesting**: SMA crossover, mean-reversion, and
+  momentum strategies with a long-only backtester reporting return, win rate,
+  and max drawdown (`bagbot backtest --strategy sma|meanrev|momentum`)
 - **Solana adapter**: JSON-RPC balance/blockhash queries (httpx), transfers
   signed via the optional `solders` extra (`pip install bagbot[solana]`)
-- **Local web dashboard**: `bagbot gui` serves a dark trading dashboard
-  (market data, portfolio, open orders, system alerts, live price chart)
+- **Local web dashboard**: `bagbot gui` serves a dark trading dashboard with
+  market data, candlestick charts, portfolio, open orders, performance
+  analytics, price-alert rules, in-dashboard (dry-run) order placement, and
+  a WebSocket-fed live price buffer with REST polling fallback
 - **Dry-run by default**: orders are simulated locally; nothing is sent to
   Kraken until you opt in with `--live` + `BAGBOT_DRY_RUN=false`
 - Secrets come from env vars / a gitignored `.env` file — never hardcoded
@@ -53,8 +56,22 @@ bagbot buy XBTUSD 0.01                 # dry-run market buy
 bagbot sell XBTUSD 0.01 --price 65000  # dry-run limit sell
 bagbot cancel DRYRUN-000001
 bagbot backtest XBTUSD --strategy sma --fast 10 --slow 30 --interval 60
+bagbot backtest XBTUSD --strategy meanrev --lookback 20 --num-std 2
+bagbot backtest XBTUSD --strategy momentum --lookback 10 --threshold 0.05
 bagbot solbalance <SOLANA_ADDRESS>     # SOL balance via JSON-RPC
 bagbot gui --port 8080                 # local web dashboard
+```
+
+### Dashboard alert rules
+
+Create `.bagbot.alerts.json` (gitignored; see `.bagbot.alerts.example.json`)
+to get dashboard alerts when a price crosses a threshold:
+
+```json
+[
+  { "pair": "XBTUSD", "above": 150000 },
+  { "pair": "XBTUSD", "below": 40000 }
+]
 ```
 
 ### Live trading
@@ -90,7 +107,9 @@ src/bagbot/
   strategy/
     base.py           # Strategy ABC, Signal, Candle
     sma.py            # SMA crossover strategy
-    backtest.py       # long-only backtester (PnL, win rate)
+    meanrev.py        # mean-reversion (Bollinger-style) strategy
+    momentum.py       # momentum strategy
+    backtest.py       # long-only backtester (PnL, win rate, max drawdown)
   solana/
     adapter.py        # Solana JSON-RPC adapter (transfers via solders extra)
   gui/
@@ -102,7 +121,7 @@ tests/                # offline pytest suite
 ## Roadmap
 
 - Full Solana swap support (Jupiter aggregator) and SPL token management
-- More strategies (mean reversion, momentum) and strategy parameters from config
-- WebSocket-fed live charts and order placement from the dashboard
-- Richer GUI toward the full design mockups: portfolio analytics, strategy
-  builder canvas, performance charts, and alert rules
+- Strategy parameters from config files and custom strategy plugins
+- Live strategy execution loop (signals -> engine orders) with kill switch
+- Richer GUI toward the full design mockups: strategy builder canvas,
+  portfolio allocation charts, and alert-rule editing from the UI
